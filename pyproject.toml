@@ -1,14 +1,15 @@
 [project]
 name = "fastapi"
-version = "0.1.0]"
+version = "0.1.0"
 description = "_"
 authors = [
     {name = "Your Name",email = "you@example.com"}
 ]
 license = "_"
 readme = "README.md"
-requires-python = "3.12"
+requires-python = ">=3.12"
 dependencies = [
+    "psycopg2-binary (>=2.9.12,<3.0.0)"
 ]
 
 

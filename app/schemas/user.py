@@ -1,19 +1,37 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List
 
+# --- PROFILE SCHEMAS ---
+class ProfileBase(BaseModel):
+    bio: Optional[str] = None
+    phone: Optional[str] = None
+
+class ProfileCreate(ProfileBase):
+    pass
+
+class ProfileResponse(ProfileBase):
+    id: int
+    class Config: from_attributes = True
+
+# --- ORDER SCHEMAS ---
+class OrderCreate(BaseModel):
+    item_name: str
+    quantity: int
+
+class OrderResponse(OrderCreate):
+    id: int
+    class Config: from_attributes = True
+
+# --- USER SCHEMAS ---
 class UserBase(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
+    username: str
     email: EmailStr
-    full_name: Optional[str] = Field(None, max_length=100)
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
-
-class UserUpdate(UserBase):
-    password: Optional[str] = Field(None, min_length=6)
+    password: str  # В реаліях хешується, тут для валідації
 
 class UserResponse(UserBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    profile: Optional[ProfileResponse] = None
+    orders: List[OrderResponse] = []
+    class Config: from_attributes = True

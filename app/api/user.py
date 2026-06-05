@@ -1,57 +1,76 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import List
-from app.schemas.user import UserCreate, UserUpdate, UserResponse
 
-router = APIRouter(prefix="/users", tags=["Users"])
+from ..db.session import get_db
+from ..models.user import User, Profile, Order
+from ..models.product import Category, Product
+from ..schemas.user import UserCreate, UserResponse, OrderCreate, OrderResponse, ProfileCreate, ProfileResponse
+from ..schemas.product import CategoryCreate, CategoryResponse, ProductCreate, ProductResponse
 
-users_db = {}
-id_counter = 1
+router = APIRouter(tags=["E-Commerce API"])
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user_data: UserCreate):
-    global id_counter
+# --- 1. USER CRUD ---
+@router.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Імітуємо перевірку унікальності email
-    for u in users_db.values():
-        if u["email"] == user_data.email:
-            raise HTTPException(status_code=400, detail="Email already registered")
-            
-    new_user = {
-        "id": id_counter,
-        "username": user_data.username,
-        "email": user_data.email,
-        "full_name": user_data.full_name
-    }
-    users_db[id_counter] = new_user
-    id_counter += 1
+    new_user = User(username=user_data.username, email=user_data.email)
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
 
-@router.get("/", response_model=List[UserResponse])
-def get_users():
-    return list(users_db.values())
+@router.get("/users/", response_model=List[UserResponse])
+async def get_users(db: AsyncSession = Depends(get_db)):
+    # Використовуємо selectinload для асинхронного завантаження зв'язків One-to-One та One-to-Many
+    result = await db.execute(select(User).options(selectinload(User.profile), selectinload(User.orders)))
+    return result.scalars().all()
 
-@router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: int):
-    if user_id not in users_db:
+# --- 2. PROFILE ROUTE (One-to-One) ---
+@router.post("/users/{user_id}/profile", response_model=ProfileResponse)
+async def create_user_profile(user_id: int, profile_data: ProfileCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="User not found")
-    return users_db[user_id]
-
-@router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user_data: UserUpdate):
-    if user_id not in users_db:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    current_user = users_db[user_id]
-    current_user["username"] = user_data.username
-    current_user["email"] = user_data.email
-    current_user["full_name"] = user_data.full_name
     
-    users_db[user_id] = current_user
-    return current_user
+    new_profile = Profile(**profile_data.model_dump(), user_id=user_id)
+    db.add(new_profile)
+    await db.commit()
+    await db.refresh(new_profile)
+    return new_profile
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int):
-    if user_id not in users_db:
-        raise HTTPException(status_code=404, detail="User not found")
-    del users_db[user_id]
-    return None
+# --- 3. ORDER ROUTE (One-to-Many) ---
+@router.post("/users/{user_id}/orders", response_model=OrderResponse)
+async def create_order(user_id: int, order_data: OrderCreate, db: AsyncSession = Depends(get_db)):
+    new_order = Order(**order_data.model_dump(), user_id=user_id)
+    db.add(new_order)
+    await db.commit()
+    await db.refresh(new_order)
+    return new_order
+
+# --- 4. CATEGORIES & PRODUCTS ROUTES ---
+@router.post("/categories/", response_model=CategoryResponse)
+async def create_category(cat: CategoryCreate, db: AsyncSession = Depends(get_db)):
+    new_cat = Category(name=cat.name)
+    db.add(new_cat)
+    await db.commit()
+    await db.refresh(new_cat)
+    return new_cat
+
+@router.post("/categories/{category_id}/products", response_model=ProductResponse)
+async def create_product(category_id: int, prod: ProductCreate, db: AsyncSession = Depends(get_db)):
+    new_prod = Product(**prod.model_dump(), category_id=category_id)
+    db.add(new_prod)
+    await db.commit()
+    await db.refresh(new_prod)
+    return new_prod
+
+@router.get("/categories/", response_model=List[CategoryResponse])
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Category).options(selectinload(Category.products)))
+    return result.scalars().all()

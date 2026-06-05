@@ -2,10 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Одразу ставимо залежності
-RUN pip install --no-cache-dir fastapi uvicorn pydantic[email]
+# Нам потрібні fastapi, uvicorn, pydantic-settings, alembic та асинхронний драйвер asyncpg
+RUN pip install --no-cache-dir fastapi uvicorn pydantic[email] pydantic-settings alembic sqlalchemy asyncpg
 
-# Копіюємо весь проєкт
 COPY . /app/
 
 EXPOSE 8000

@@ -27,8 +27,10 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
 
-class UserCreate(UserBase):
-    password: str  # В реаліях хешується, тут для валідації
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str  # 🌟 Обов'язково має бути тут, щоб ручка /auth/register могла його зчитати!
 
 class UserResponse(UserBase):
     id: int

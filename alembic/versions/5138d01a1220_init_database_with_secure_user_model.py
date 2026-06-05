@@ -1,8 +1,8 @@
-"""Initial 5 models
+"""Init database with secure user model
 
-Revision ID: 20fdd7c1dfe3
+Revision ID: 5138d01a1220
 Revises: 
-Create Date: 2026-06-05 12:05:59.412154
+Create Date: 2026-06-05 14:09:28.055649
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '20fdd7c1dfe3'
+revision: str = '5138d01a1220'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,6 +32,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('username', sa.String(length=50), nullable=False),
     sa.Column('email', sa.String(length=100), nullable=False),
+    sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)

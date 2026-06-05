@@ -1,59 +1,108 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import List
 
-from ..db.session import get_db
-from ..models.user import User, Profile, Order
-from ..models.product import Category, Product
-from ..schemas.user import UserCreate, UserResponse, OrderCreate, OrderResponse, ProfileCreate, ProfileResponse
-from ..schemas.product import CategoryCreate, CategoryResponse, ProductCreate, ProductResponse
+from app.db.session import get_db, get_current_user
+from app.models.user import User, Profile, Order
+from app.models.product import Category, Product
+from app.schemas.user import UserCreate, UserResponse, OrderCreate, OrderResponse, ProfileCreate, ProfileResponse
+from app.schemas.product import CategoryCreate, CategoryResponse, ProductCreate, ProductResponse
+from app.core.security import hash_password, verify_password, create_access_token
 
-router = APIRouter(tags=["E-Commerce API"])
+router = APIRouter(tags=["Auth & Protected E-Commerce"])
 
-# --- 1. USER CRUD ---
-@router.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+# --- 1. РУЧКА РЕЄСТРАЦІЇ (REGISTRATION) ---
+@router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    new_user = User(username=user_data.username, email=user_data.email)
+    # Хешуємо та солимо пароль
+    secured_password = hash_password(user_data.password)
+    
+    new_user = User(
+        username=user_data.username, 
+        email=user_data.email, 
+        hashed_password=secured_password
+    )
     db.add(new_user)
     await db.commit()
-    await db.refresh(new_user)
-    return new_user
-
-@router.get("/users/", response_model=List[UserResponse])
-async def get_users(db: AsyncSession = Depends(get_db)):
-    # Використовуємо selectinload для асинхронного завантаження зв'язків One-to-One та One-to-Many
-    result = await db.execute(select(User).options(selectinload(User.profile), selectinload(User.orders)))
-    return result.scalars().all()
-
-# --- 2. PROFILE ROUTE (One-to-One) ---
-@router.post("/users/{user_id}/profile", response_model=ProfileResponse)
-async def create_user_profile(user_id: int, profile_data: ProfileCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.id == user_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="User not found")
     
-    new_profile = Profile(**profile_data.model_dump(), user_id=user_id)
-    db.add(new_profile)
-    await db.commit()
-    await db.refresh(new_profile)
-    return new_profile
+    # 🌟 ФІКС: Завантажуємо об'єкт заново разом із зв'язками для безпечної валідації відповіді
+    query = (
+        select(User)
+        .where(User.id == new_user.id)
+        .options(selectinload(User.profile), selectinload(User.orders))
+    )
+    refresh_result = await db.execute(query)
+    return refresh_result.scalar_one()
 
-# --- 3. ORDER ROUTE (One-to-Many) ---
-@router.post("/users/{user_id}/orders", response_model=OrderResponse)
-async def create_order(user_id: int, order_data: OrderCreate, db: AsyncSession = Depends(get_db)):
-    new_order = Order(**order_data.model_dump(), user_id=user_id)
+
+# --- 2. РУЧКА АВТЕНТИФІКАЦІЇ (LOGIN ТА ВСТАНОВЛЕННЯ COOKIES) ---
+@router.post("/auth/login")
+async def login(
+    response: Response, 
+    form_data: OAuth2PasswordRequestForm = Depends(), 
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(User).where(User.email == form_data.username))
+    user = result.scalar_one_or_none()
+    
+    # Перевіряємо наявність юзера та валідність соленого пароля
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    
+    # Створюємо JWT токен
+    access_token = create_access_token(data={"sub": user.email})
+    
+    # Записуємо токен у безпечні HTTP-only Cookies
+    response.set_cookie(
+        key="access_token", 
+        value=access_token, 
+        httponly=True,       # Захист від XSS
+        max_age=1800,        # 30 хвилин
+        samesite="lax"
+    )
+    
+    return {"message": "Successfully logged in"}
+
+
+# --- 3. ЗАХИЩЕНА РУЧКА: СТВОРЕННЯ ЗАМОВЛЕННЯ (Вимагає авторизації) ---
+@router.post("/orders/", response_model=OrderResponse)
+async def create_order(
+    order_data: OrderCreate, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)  # Захист через Depends
+):
+    new_order = Order(**order_data.model_dump(), user_id=current_user.id)
     db.add(new_order)
     await db.commit()
     await db.refresh(new_order)
     return new_order
 
-# --- 4. CATEGORIES & PRODUCTS ROUTES ---
+
+# --- 4. ЗАХИЩЕНА РУЧКА: ПЕРЕГЛЯД ВЛАСНИХ ЗАМОВЛЕНЬ ---
+@router.get("/orders/my", response_model=List[OrderResponse])
+async def get_my_orders(
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)  # Захист через Depends
+):
+    result = await db.execute(select(Order).where(Order.user_id == current_user.id))
+    return result.scalars().all()
+
+
+# --- 5. РУЧКА ВИХОДУ (LOGOUT) ---
+@router.post("/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie(key="access_token")
+    return {"message": "Successfully logged out"}
+
+
+# --- Існуючі ручки категорій (залишаємо для роботи маркетплейсу) ---
 @router.post("/categories/", response_model=CategoryResponse)
 async def create_category(cat: CategoryCreate, db: AsyncSession = Depends(get_db)):
     new_cat = Category(name=cat.name)

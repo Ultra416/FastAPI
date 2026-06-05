@@ -1,7 +1,7 @@
 from sqlalchemy import String, Integer, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
-from app.db.session import Base
+from ..db.session import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -9,6 +9,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # One-to-One: У одного юзера один профіль
     profile: Mapped["Profile"] = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")

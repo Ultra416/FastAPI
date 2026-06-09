@@ -1,0 +1,4 @@
+1. git checkout dev
+2. docker compose down --rmi all
+3. docker compose up --build
+4. docker exec -it fastapi_app_web_v2 pip list

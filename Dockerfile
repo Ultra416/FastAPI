@@ -1,15 +1,28 @@
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir poetry
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false
+
+ENV PATH="$POETRY_HOME/bin:$PATH"
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock* /app/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN poetry config virtualenvs.create false && poetry install --no-root --no-interaction --no-ansi
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+COPY pyproject.toml poetry.lock /app/
+
+RUN poetry install --no-interaction --no-ansi --no-root
 
 COPY . /app/
 
 EXPOSE 8000
 
-CMD ["poetry", "run", "uvicorn", "main.py:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,9 +1,25 @@
 FROM python:3.12-slim
 
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false
+
+ENV PATH="$POETRY_HOME/bin:$PATH"
+
 WORKDIR /app
 
-# Нам потрібні fastapi, uvicorn, pydantic-settings, alembic та асинхронний драйвер asyncpg
-RUN pip install --no-cache-dir fastapi uvicorn pydantic[email] pydantic-settings alembic sqlalchemy asyncpg pyjwt bcrypt python-multipart
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+COPY pyproject.toml poetry.lock /app/
+
+RUN poetry install --no-interaction --no-ansi --no-root
 
 COPY . /app/
 

@@ -12,3 +12,4 @@ poetry.lock
 .vscode/
 *.log
 git_history.log
+.env

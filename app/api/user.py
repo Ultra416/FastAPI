@@ -43,7 +43,7 @@ async def register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db
 
 
 # --- 2. РУЧКА АВТЕНТИФІКАЦІЇ (LOGIN ТА ВСТАНОВЛЕННЯ COOKIES) ---
-@router.post("/auth/login")
+@router.post("/login")
 async def login(
     response: Response, 
     form_data: OAuth2PasswordRequestForm = Depends(), 
